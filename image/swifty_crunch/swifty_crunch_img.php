@@ -1,7 +1,5 @@
 <?php
 
-// aaa
-
 // Based on http://squeezr.it
 // Based on http://adaptive-images.com
 
