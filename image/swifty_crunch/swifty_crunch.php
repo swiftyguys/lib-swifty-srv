@@ -1,7 +1,7 @@
 <?php
 
 abstract class SwiftyCrunch {
-    private $cache_lifetime = 604800;
+    private $cache_lifetime = 604800; // 7 * 24 * 60 * 60
     
     private $_headers = array();
 
@@ -28,16 +28,17 @@ abstract class SwiftyCrunch {
 
         // Send basic headers
         header('Content-Type: '.$mime);
-        header('Content-Length: '.filesize(@is_link($src) ? @readlink($src) : $src));
+        header('X-SS-Test-MIME: '.$mime);
+        header('X-SS-Test-Content-Length: '.filesize( @is_link($src) ? @readlink($src) : $src ));
+        header('Content-Length: ' . filesize( @is_link($src) ? @readlink($src) : $src ) );
 
         // If the client browser should cache the image
         if ($cache) {
-            header('Cache-Control: private, max-age='.$this->cache_lifetime);
+            header( 'Pragma: public' );
+            header( 'Cache-Control: public' );
             header('Expires: '.gmdate('D, d M Y H:i:s', time() + $this->cache_lifetime).' GMT');
             header('Last-Modified: '.gmdate('D, d M Y H:i:s', filemtime($src)).' GMT');
             header('ETag: '.$this->_calculateFileETag($src));
-
-        // Else
         } else {
             header('Cache-Control: no-cache, must-revalidate');
             header('Expires: '.gmdate('D, d M Y H:i:s', time() - $this->cache_lifetime).' GMT');

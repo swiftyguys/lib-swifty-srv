@@ -66,6 +66,7 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     private $source_file = '';
     private $cache_file = '';
     private $cache_dir = '';
+    private $final_url = '';
     private $ori_width = -1;
     private $ori_height = -1;
     private $ori_type = '';
@@ -86,10 +87,15 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     protected function init() {
         $document_root = $_SERVER['DOCUMENT_ROOT'];
         $this->requested_uri = parse_url(urldecode($_SERVER['REQUEST_URI']), PHP_URL_PATH);
-        $this->source_file = $document_root.$this->requested_uri;
-        $this->cache_file = $document_root.$_SERVER['REDIRECT_URL'];
+//        $this->source_file = $document_root.$this->requested_uri;
+$this->source_file = $document_root.$_SERVER['MY_CRUNCH_FILE'];
+//        $this->cache_file = $document_root.$_SERVER['REDIRECT_URL'];
+//$this->cache_file = dirname( __FILE__ ) . '/cache';
+$this->cache_file = $document_root.$_SERVER['MY_CRUNCH_URL'];
         $this->cache_dir = dirname( $this->cache_file );
         $this->target_type = $this->getExtension( $this->cache_file );
+//        $this->final_url = $_SERVER['REDIRECT_URL'];
+$this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
 //        $i = strpos( $this->source_file, '_ssw_' );
 //        if( $i > 0 ) {
@@ -104,12 +110,20 @@ class SwiftyCrunchImg extends SwiftyCrunch {
         $returnImage = $this->cache_file;
 
         $wantedWidth = -2;
-        $url = $_SERVER['REDIRECT_URL'];
+        $wantedHeight = -2;
+        $url = $this->final_url;
         $cmp = '_ssw_';
         if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
             $w = intval( substr( $url, $i + strlen( $cmp ) ) );
             if( $w > 0 ) {
                 $wantedWidth = $w;
+            }
+        }
+        $cmp = '_ssh_';
+        if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
+            $h = intval( substr( $url, $i + strlen( $cmp ) ) );
+            if( $h > 0 ) {
+                $wantedHeight = $h;
             }
         }
         if( strpos( $this->cache_file, '_ssdv_mobi_' ) !== false ) { // false compare is deliberate
@@ -132,11 +146,16 @@ class SwiftyCrunchImg extends SwiftyCrunch {
             $this->addErrorHeader( 'cache dir error' );
         } else {
             $errors = array();
-            $returnImage = $this->crunch( $this->source_file, $this->cache_file, $wantedWidth, $errors );
+            $returnImage = $this->crunch( $this->source_file, $this->cache_file, $wantedWidth, $wantedHeight, $errors );
             foreach ($errors as $errMsg) {
                 $this->addErrorHeader( $errMsg );
             }
         }
+
+        $this->addHeader( 'X-SS-Wanted-Width', "=" . $wantedWidth );
+        $this->addHeader( 'X-SS-Wanted-Height', "=" . $wantedHeight );
+//        $this->addHeader( 'X-SS-stuffpixrat', "=" . $_GET[ 'stuffpixrat' ] );
+//        $this->addHeader( 'X-SS-source_height', "=" . $this->source_height );
 
         $this->sendFile( $returnImage, 'image/'. $this->getExtensionCorrected( $returnImage, $this->target_type ), true);
     }
@@ -153,11 +172,14 @@ class SwiftyCrunchImg extends SwiftyCrunch {
 
     ////////////////////////////////////////
 
-    public function crunch($source, $target, $targetWidth, array &$errors = array()) {
-        list($width, $height, $type) = getimagesize($source);
+    public function crunch($source, $target, $wantedWidth, $wantedHeight, array &$errors = array()) {
+        $targetWidth = $wantedWidth;
+        $targetHeight = $wantedHeight;
 
-        $this->ori_width = $width;
-        $this->ori_height = $height;
+        list( $ori_width, $ori_height, $type ) = getimagesize($source);
+
+        $this->ori_width = $ori_width;
+        $this->ori_height = $ori_height;
         $this->ori_type = image_type_to_extension( $type, FALSE );
 //        $this->target_type = image_type_to_extension( $type, FALSE );
 
@@ -166,22 +188,31 @@ class SwiftyCrunchImg extends SwiftyCrunch {
             $targetWidth = $this->ori_width;
         }
 
-        $targetHeight = round($targetWidth * $height / $width);
+        $wantedHeight = intval( $wantedHeight );
+        if( $wantedHeight === -2 ) {
+//            $wantedHeight = $this->ori_height;
+            $wantedHeight = round( $targetWidth * $ori_height / $ori_width );
+        }
+
+//        $targetHeight = round( $targetWidth * $ori_height / $ori_width );
+        $targetHeight = $wantedHeight;
 
         $this->target_width = $targetWidth;
         $this->target_height = $targetHeight;
 
+        $this->source_height = $this->height_target_to_source( $targetHeight );
+
         // If the image image has to be downsampled at all
-        if( $targetWidth < $width  ) {
+        if( $targetWidth < $ori_width  ) {
             switch ($type) {
                 case IMAGETYPE_PNG:
-                    $saved = $this->downscalePng($source, $width, $height, $target, $targetWidth, $targetHeight);
+                    $saved = $this->downscalePng($source, $ori_width, $ori_height, $target, $targetWidth, $targetHeight);
                     break;
                 case IMAGETYPE_JPEG:
-                    $saved = $this->downscaleJpeg( $source, $width, $height, $target, $targetWidth, $targetHeight, 'resize' );
+                    $saved = $this->downscaleJpeg( $source, $ori_width, $ori_height, $target, $targetWidth, $targetHeight, 'resize' );
                     break;
                 case IMAGETYPE_GIF:
-                    $saved = $this->downscaleGif($source, $width, $height, $target, $targetWidth, $targetHeight);
+                    $saved = $this->downscaleGif($source, $ori_width, $ori_height, $target, $targetWidth, $targetHeight);
                     break;
             }
 
@@ -198,7 +229,7 @@ class SwiftyCrunchImg extends SwiftyCrunch {
                 $returnImage = $target;
             } else {
                 if( $type === IMAGETYPE_JPEG ) {
-                    $saved = $this->downscaleJpeg($source, $width, $height, $target, $width, $height, 'optimize' );
+                    $saved = $this->downscaleJpeg($source, $ori_width, $ori_height, $target, $ori_width, $ori_height, 'optimize' );
 
                     if ($saved && @file_exists($target)) {
                         $returnImage = $target;
@@ -211,6 +242,12 @@ class SwiftyCrunchImg extends SwiftyCrunch {
 
         return $returnImage;
    	}
+
+    ////////////////////////////////////////
+
+    protected function height_target_to_source( $v ) {
+        return $v / $this->target_height * $this->ori_height;
+    }
 
     ////////////////////////////////////////
 
