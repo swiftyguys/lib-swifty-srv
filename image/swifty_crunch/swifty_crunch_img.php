@@ -655,7 +655,8 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
     protected function jpegTranIfSmaller( $target, $target_dest ) {
         exec( 'jpegtran -copy none -optimize -progressive ' . $target . ' > ' . $target_dest . '.tran', $result, $return_var );
-        if( $this->getFileSize( $target_dest . '.tran' ) < $this->getFileSize( $target ) ) {
+        $size = $this->getFileSize( $target_dest . '.tran' );
+        if( $size > 0 && $size < $this->getFileSize( $target ) ) {
             exec( 'mv -f ' . $target_dest . '.tran ' . $target_dest, $result, $return_var );
         } else {
             $this->deleteFile( $target_dest . '.tran' );
