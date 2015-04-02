@@ -74,6 +74,9 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     private $target_height = -1;
     private $target_type = '';
     private $browser_device = '';
+    private $wanted_width = -2;
+    private $wanted_height = -2;
+    private $forced_size = 0;
 
     protected static $_quantizers = array(
         self::QUANTIZER_INTERNAL => false,
@@ -117,19 +120,33 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
             $w = intval( substr( $url, $i + strlen( $cmp ) ) );
             if( $w > 0 ) {
                 $wantedWidth = $w;
+                // Check for ;h= (used in SS1 resize url's)
+                $cmp2 = ';h=';
+                if( substr( $url, $i + strlen( $cmp ) + strlen( '' . $w ), 3 ) === $cmp2 ) {
+                    $h = intval( substr( $url, $i + strlen( $cmp ) + strlen( '' . $w ) + strlen( $cmp2 ) ) );
+                    if( $h > 0 ) {
+                        $wantedHeight = $h;
+                        $this->forced_size = 1;
+                    }
+                }
             }
         }
-        $cmp = '_ssh_';
-        if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
-            $h = intval( substr( $url, $i + strlen( $cmp ) ) );
-            if( $h > 0 ) {
-                $wantedHeight = $h;
+        if( $wantedHeight === -2 ) {
+            $cmp = '_ssh_';
+            if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
+                $h = intval( substr( $url, $i + strlen( $cmp ) ) );
+                if( $h > 0 ) {
+                    $wantedHeight = $h;
+                }
             }
         }
         if( strpos( $this->cache_file, '_ssdv_mobi_' ) !== false ) { // false compare is deliberate
             $this->browser_device = 'mobi';
             $this->jpg_quality = $this->jpg_quality_mobi;
         }
+
+        $this->wanted_width = $wantedWidth;
+        $this->wanted_height = $wantedHeight;
 
 //error_reporting( E_ERROR | E_WARNING | E_PARSE | E_NOTICE );
 //error_log( 'test1' );
@@ -173,8 +190,8 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
     ////////////////////////////////////////
 
     public function crunch($source, $target, $wantedWidth, $wantedHeight, array &$errors = array()) {
-        $targetWidth = $wantedWidth;
-        $targetHeight = $wantedHeight;
+        $targetWidth = intval( $wantedWidth );
+        $targetHeight = intval( $wantedHeight );
 
         list( $ori_width, $ori_height, $type ) = getimagesize($source);
 
@@ -183,12 +200,10 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $this->ori_type = image_type_to_extension( $type, FALSE );
 //        $this->target_type = image_type_to_extension( $type, FALSE );
 
-        $targetWidth = intval($targetWidth);
         if( $targetWidth === -2 ) {
             $targetWidth = $this->ori_width;
         }
 
-        $wantedHeight = intval( $wantedHeight );
         if( $wantedHeight === -2 ) {
 //            $wantedHeight = $this->ori_height;
             $wantedHeight = round( $targetWidth * $ori_height / $ori_width );
@@ -197,13 +212,18 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 //        $targetHeight = round( $targetWidth * $ori_height / $ori_width );
         $targetHeight = $wantedHeight;
 
+        if( $this->forced_size === 1 ) {
+            $targetWidth = intval( $wantedWidth );
+            $targetHeight = intval( $wantedHeight );
+        }
+
         $this->target_width = $targetWidth;
         $this->target_height = $targetHeight;
 
-        $this->source_height = $this->height_target_to_source( $targetHeight );
+//        $this->source_height = $this->height_target_to_source( $targetHeight );
 
         // If the image image has to be downsampled at all
-        if( $targetWidth < $ori_width  ) {
+        if( $targetWidth !== $ori_width  ) {
             switch ($type) {
                 case IMAGETYPE_PNG:
                     $saved = $this->downscalePng($source, $ori_width, $ori_height, $target, $targetWidth, $targetHeight);
@@ -224,9 +244,9 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
         } else {
             // No downsampling necessary, try to cache a copy of the original image to avoid subsequent php execution
-            if( /*!@symlink($source, $target) &&*/ !@copy($source, $target) ) {
+            if( !@symlink($source, $target) && !@copy($source, $target) ) {
                 $errors[] = 'copy original to cache failed';
-                $returnImage = $target;
+                $returnImage = $source/*$target*/;
             } else {
                 if( $type === IMAGETYPE_JPEG ) {
                     $saved = $this->downscaleJpeg($source, $ori_width, $ori_height, $target, $ori_width, $ori_height, 'optimize' );
@@ -236,6 +256,8 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
                     } else {
                         $errors[] = 'optimize failed';
                     }
+                } else {
+                    $returnImage = $target;
                 }
             }
         }
@@ -757,7 +779,8 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
         // Sharpen image if possible and requested
         if ( !$quantize ) {
-            $this->sharpenImage($targetImage, $width, $targetWidth);
+            // RH20150402 Sharpenimage is messing up transparency
+//            $this->sharpenImage($targetImage, $width, $targetWidth);
         }
 
         // If the image should be quantized internally
