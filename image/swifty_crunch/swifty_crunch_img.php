@@ -70,6 +70,7 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     private $ori_width = -1;
     private $ori_height = -1;
     private $ori_type = '';
+    private $tech_type = '';
     private $target_width = -1;
     private $target_height = -1;
     private $target_type = '';
@@ -77,6 +78,8 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     private $wanted_width = -2;
     private $wanted_height = -2;
     private $forced_size = 0;
+    private $errors = '';
+    private $return_image = '';
 
     protected static $_quantizers = array(
         self::QUANTIZER_INTERNAL => false,
@@ -88,6 +91,38 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     const QUANTIZER_PNGNQ = 'pngnq';
 
     protected function init() {
+        $this->set_properties();
+
+        if (!file_exists( $this->source_file )) {
+            header("Status: 404 Not Found");
+            exit();
+        }
+
+        $this->return_image = $this->cache_file;
+
+        $this-> get_param_sizes();
+
+        if (!extension_loaded('gd') && (!function_exists('dl') || !dl('gd.so'))) {
+            // If the GD extension is not available
+            $this->addErrorHeader( 'GD not available' );
+        } elseif( ( ! @is_dir( $this->cache_dir ) && ! @mkdir( $this->cache_dir , 0755, true ) ) || ( ! @is_writable( $this->cache_dir ) && ! chmod( $this->cache_dir , 0755 ) ) ) {
+            // If the cache directory doesn't exist or is not writable: Error
+            $this->addErrorHeader( 'cache dir error' );
+        } else {
+            $this->crunch();
+            foreach( $this->errors as $errMsg ) {
+                $this->addErrorHeader( $errMsg );
+            }
+        }
+
+        $this->add_debug_headers();
+
+        $this->sendFile( $this->return_image, 'image/'. $this->getExtensionCorrected( $this->return_image, $this->target_type ), true);
+    }
+
+    ////////////////////////////////////////
+
+    protected function set_properties() {
         $document_root = $_SERVER['DOCUMENT_ROOT'];
         $this->requested_uri = parse_url(urldecode($_SERVER['REQUEST_URI']), PHP_URL_PATH);
 //        $this->source_file = $document_root.$this->requested_uri;
@@ -99,22 +134,16 @@ $this->cache_file = $document_root.$_SERVER['MY_CRUNCH_URL'];
         $this->target_type = $this->getExtension( $this->cache_file );
 //        $this->final_url = $_SERVER['REDIRECT_URL'];
 $this->final_url = $_SERVER['MY_CRUNCH_URL'];
+    }
 
-//        $i = strpos( $this->source_file, '_ssw_' );
-//        if( $i > 0 ) {
-//            $this->source_file = substr( $this->source_file, 0, $i );
-//        }
+    ////////////////////////////////////////
 
-        if (!file_exists( $this->source_file )) {
-            header("Status: 404 Not Found");
-            exit();
-        }
-
-        $returnImage = $this->cache_file;
-
+    protected function get_param_sizes() {
         $wantedWidth = -2;
         $wantedHeight = -2;
+
         $url = $this->final_url;
+
         $cmp = '_ssw_';
         if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
             $w = intval( substr( $url, $i + strlen( $cmp ) ) );
@@ -131,6 +160,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
                 }
             }
         }
+
         if( $wantedHeight === -2 ) {
             $cmp = '_ssh_';
             if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
@@ -140,6 +170,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
                 }
             }
         }
+
         if( strpos( $this->cache_file, '_ssdv_mobi_' ) !== false ) { // false compare is deliberate
             $this->browser_device = 'mobi';
             $this->jpg_quality = $this->jpg_quality_mobi;
@@ -147,34 +178,15 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
         $this->wanted_width = $wantedWidth;
         $this->wanted_height = $wantedHeight;
+    }
 
-//error_reporting( E_ERROR | E_WARNING | E_PARSE | E_NOTICE );
-//error_log( 'test1' );
-//$result2 = shell_exec( 'mkdir -m 0755 ' . $this->cache_dir . ' 2>&1' );
-//$this->addHeader( 'X-SS-Test-mkdir', '=' . preg_replace( "/\r|\n/", "==", $result2 ) );
-//$result2 = shell_exec( 'whoami 2>&1' );
-//$this->addHeader( 'X-SS-Test-whoami', '=' . preg_replace( "/\r|\n/", "==", $result2 ) );
+    ////////////////////////////////////////
 
-        if (!extension_loaded('gd') && (!function_exists('dl') || !dl('gd.so'))) {
-            // If the GD extension is not available
-            $this->addErrorHeader( 'GD not available' );
-        } elseif( (!@is_dir( $this->cache_dir ) && !@mkdir( $this->cache_dir , 0755, true)) || (!@is_writable( $this->cache_dir ) && !chmod( $this->cache_dir , 0755 ) ) ) {
-            // If the cache directory doesn't exist or is not writable: Error
-            $this->addErrorHeader( 'cache dir error' );
-        } else {
-            $errors = array();
-            $returnImage = $this->crunch( $this->source_file, $this->cache_file, $wantedWidth, $wantedHeight, $errors );
-            foreach ($errors as $errMsg) {
-                $this->addErrorHeader( $errMsg );
-            }
-        }
-
-        $this->addHeader( 'X-SS-Wanted-Width', "=" . $wantedWidth );
-        $this->addHeader( 'X-SS-Wanted-Height', "=" . $wantedHeight );
+    protected function add_debug_headers() {
+        $this->addHeader( 'X-SS-Wanted-Width', "=" . $this->wanted_width );
+        $this->addHeader( 'X-SS-Wanted-Height', "=" . $this->wanted_height );
 //        $this->addHeader( 'X-SS-stuffpixrat', "=" . $_GET[ 'stuffpixrat' ] );
 //        $this->addHeader( 'X-SS-source_height', "=" . $this->source_height );
-
-        $this->sendFile( $returnImage, 'image/'. $this->getExtensionCorrected( $returnImage, $this->target_type ), true);
     }
 
     ////////////////////////////////////////
@@ -189,16 +201,33 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
     ////////////////////////////////////////
 
-    public function crunch($source, $target, $wantedWidth, $wantedHeight, array &$errors = array()) {
+    public function crunch() {
+        $this->calc_sizes();
+
+        if( $this->target_width !== $this->ori_width  ) {
+            $this->resize_image();
+        } else {
+            // No downsampling necessary, try to cache a copy of the original image to avoid subsequent php execution
+            $this->no_resize_image();
+        }
+   	}
+
+    ////////////////////////////////////////
+
+    public function calc_sizes()
+    {
+        $wantedWidth = $this->wanted_width;
+        $wantedHeight = $this->wanted_height;
+
         $targetWidth = intval( $wantedWidth );
         $targetHeight = intval( $wantedHeight );
 
-        list( $ori_width, $ori_height, $type ) = getimagesize($source);
+        list( $ori_width, $ori_height, $type ) = getimagesize( $this->source_file );
 
         $this->ori_width = $ori_width;
         $this->ori_height = $ori_height;
-        $this->ori_type = image_type_to_extension( $type, FALSE );
-//        $this->target_type = image_type_to_extension( $type, FALSE );
+        $this->tech_type = $type;
+        $this->ori_type = image_type_to_extension( $this->tech_type, FALSE );
 
         if( $targetWidth === -2 ) {
             $targetWidth = $this->ori_width;
@@ -206,10 +235,10 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
         if( $wantedHeight === -2 ) {
 //            $wantedHeight = $this->ori_height;
-            $wantedHeight = round( $targetWidth * $ori_height / $ori_width );
+            $wantedHeight = round( $targetWidth * $this->ori_height / $this->ori_width );
         }
 
-//        $targetHeight = round( $targetWidth * $ori_height / $ori_width );
+//        $targetHeight = round( $targetWidth * $this->ori_height / $this->ori_width );
         $targetHeight = $wantedHeight;
 
         if( $this->forced_size === 1 ) {
@@ -221,54 +250,62 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $this->target_height = $targetHeight;
 
 //        $this->source_height = $this->height_target_to_source( $targetHeight );
-
-        // If the image image has to be downsampled at all
-        if( $targetWidth !== $ori_width  ) {
-            switch ($type) {
-                case IMAGETYPE_PNG:
-                    $saved = $this->downscalePng($source, $ori_width, $ori_height, $target, $targetWidth, $targetHeight);
-                    break;
-                case IMAGETYPE_JPEG:
-                    $saved = $this->downscaleJpeg( $source, $ori_width, $ori_height, $target, $targetWidth, $targetHeight, 'resize' );
-                    break;
-                case IMAGETYPE_GIF:
-                    $saved = $this->downscaleGif($source, $ori_width, $ori_height, $target, $targetWidth, $targetHeight);
-                    break;
-            }
-
-            if ($saved && @file_exists($target)) {
-                $returnImage = $target;
-            } else {
-                $errors[] = 'resize failed';
-            }
-
-        } else {
-            // No downsampling necessary, try to cache a copy of the original image to avoid subsequent php execution
-            if( !@symlink($source, $target) && !@copy($source, $target) ) {
-                $errors[] = 'copy original to cache failed';
-                $returnImage = $source/*$target*/;
-            } else {
-                if( $type === IMAGETYPE_JPEG ) {
-                    $saved = $this->downscaleJpeg($source, $ori_width, $ori_height, $target, $ori_width, $ori_height, 'optimize' );
-
-                    if ($saved && @file_exists($target)) {
-                        $returnImage = $target;
-                    } else {
-                        $errors[] = 'optimize failed';
-                    }
-                } else {
-                    $returnImage = $target;
-                }
-            }
-        }
-
-        return $returnImage;
-   	}
+    }
 
     ////////////////////////////////////////
 
     protected function height_target_to_source( $v ) {
         return $v / $this->target_height * $this->ori_height;
+    }
+
+    ////////////////////////////////////////
+
+    public function resize_image() {
+        $source = $this->source_file;
+        $target = $this->cache_file;
+        $saved = FALSE;
+
+        switch( $this->tech_type ) {
+            case IMAGETYPE_PNG:
+                $saved = $this->downscalePng( $source, $this->ori_width, $this->ori_height, $target, $this->target_width, $this->target_height );
+                break;
+            case IMAGETYPE_JPEG:
+                $saved = $this->downscaleJpeg( $source, $this->ori_width, $this->ori_height, $target, $this->target_width, $this->target_height, 'resize' );
+                break;
+            case IMAGETYPE_GIF:
+                $saved = $this->downscaleGif( $source, $this->ori_width, $this->ori_height, $target, $this->target_width, $this->target_height );
+                break;
+        }
+
+        if( $saved && @file_exists( $target ) ) {
+            $this->return_image = $target;
+        } else {
+            $this->errors[] = 'resize failed';
+        }
+    }
+
+    ////////////////////////////////////////
+
+    public function no_resize_image() {
+        $source = $this->source_file;
+        $target = $this->cache_file;
+
+        if( ! @symlink( $source, $target ) && ! @copy( $source, $target ) ) {
+            $this->errors[] = 'copy original to cache failed';
+            $this->return_image = $source/*$target*/;
+        } else {
+            if( $this->tech_type === IMAGETYPE_JPEG ) {
+                $saved = $this->downscaleJpeg( $source, $this->ori_width, $this->ori_height, $target, $this->ori_width, $this->ori_height, 'optimize' );
+
+                if ($saved && @file_exists($target)) {
+                    $this->return_image = $target;
+                } else {
+                    $this->errors[] = 'optimize failed';
+                }
+            } else {
+                $this->return_image = $target;
+            }
+        }
     }
 
     ////////////////////////////////////////
@@ -286,8 +323,6 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $this->sharpenImage( $targetImage, $width, $targetWidth );
 
         if( $this->target_type === 'webp' ) {
-//            $this->target_type = 'webp';
-
             if( $this->debug ) {
                 $this->addDebugInfoToImg( $targetImage, 5 );
             }
