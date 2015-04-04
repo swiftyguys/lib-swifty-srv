@@ -1,58 +1,8 @@
 <?php
 
-// Based on http://squeezr.it
-// Based on http://adaptive-images.com
-
-// Inspirations:
-// Detect tablet in htaccess: http://mobiforge.com/design-development/tablet-and-mobile-device-detection-php
-// Get the screen width (orientation based): http://menacingcloud.com/?c=orientationScreenWidth
-// Set the viewport: http://webdesign.tutsplus.com/articles/quick-tip-dont-forget-the-viewport-meta-tag--webdesign-5972
-// Look ahead parser and picture/srcset consequences: http://blog.cloudfour.com/the-real-conflict-behind-picture-and-srcset/
-// Dssim: https://github.com/pornel/dssim
-// Find optimal jpeg quality: https://github.com/danielgtaylor/jpeg-archive
-// Perceived performance is more important that actual speed
-// Caching: http://www.mobify.com/blog/beginners-guide-to-http-cache-headers/
-// Vary header: http://www.fastly.com/blog/best-practices-for-using-the-vary-header/
-
-// Needs jpegtran: # apt-get install libjpeg-turbo-progs
-// Needs cwebp: # apt-get install webp
-// Needs jpeg-archive (for jpeg-recompress): https://github.com/danielgtaylor/jpeg-archive
-// Needs dssim (only for tests): https://github.com/pornel/dssim
-
-// dorh Make cache clear (and inspect?) functionality
-// dorh Prevent WP from generating multiple size img on upload? (like: add_image_size( 'product-img', 700, 450, false ); )
-// dorh vary header
-// dorh lazy loading
-
-// dorh make 2 docs:
-//als t af is ga ik 2 docs maken:
-//1. technische uitleg van keuzes en uiteindelijk gebruikte technieken
-//2. voor- en nadelen voor de klant en gevolgen van de gebruikte technieken
-//we zijn nu 100/100 Google pagespeed insights
-//snel op mobile (tenzij retina)
-//goede to zeer goede kwaliteit in overgrote deel van de situaties
-//en retina
-// Use this as inspiration for docs: http://blog.cloudfour.com/8-guidelines-and-1-rule-for-responsive-images/
-// progressive, webp, optimized, responsive, mobile, auto sized, cached, cdn vary header
-
-//Google Images thumbnails:  74-76
-//Facebook full-size images: 85
-//Yahoo frontpage JPEGs:     69-91
-//Youtube frontpage JPEGs:   70-82
-//Wikipedia images:          80
-//Windows live background:   82
-//Twitter user JPEG images:  30-100, apparently not enforcing quality
-
 require_once( dirname( __FILE__ ) . '/swifty_crunch.php' );
 
 $watch_cache   = TRUE; // check that the adapted image isn't stale (ensures updated source images are re-cached)
-
-////////////////////////////////////////
-
-//$source_file = str_replace( '320x200', '1920x200', $source_file );
-//$source_file = str_replace( '1920x200', '320x200', $source_file );
-//$source_file = str_replace( '940x200', '320x200', $source_file );
-//$source_file = str_replace( '550x200', '320x200', $source_file );
 
 ////////////////////////////////////////
 
@@ -69,6 +19,10 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     private $final_url = '';
     private $ori_width = -1;
     private $ori_height = -1;
+    private $source_width = -1;
+    private $source_height = -1;
+    private $source_x = 0;
+    private $source_y = 0;
     private $ori_type = '';
     private $tech_type = '';
     private $target_width = -1;
@@ -80,6 +34,14 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     private $forced_size = 0;
     private $errors = '';
     private $return_image = '';
+    private $ori_ratio = 1;
+    private $target_ratio = 1;
+    private $focus_perc_x = 0;
+    private $focus_perc_y = 0;
+    private $focus_perc_w = 100;
+    private $focus_perc_h = 100;
+    private $focus_center_x = -1;
+    private $focus_center_y = -1;
 
     protected static $_quantizers = array(
         self::QUANTIZER_INTERNAL => false,
@@ -178,6 +140,11 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
         $this->wanted_width = $wantedWidth;
         $this->wanted_height = $wantedHeight;
+
+        $this->focus_perc_x = $_GET[ 'ssrx' ];
+        $this->focus_perc_y = $_GET[ 'ssry' ];
+        $this->focus_perc_w = $_GET[ 'ssrw' ];
+        $this->focus_perc_h = $_GET[ 'ssrh' ];
     }
 
     ////////////////////////////////////////
@@ -185,8 +152,13 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
     protected function add_debug_headers() {
         $this->addHeader( 'X-SS-Wanted-Width', "=" . $this->wanted_width );
         $this->addHeader( 'X-SS-Wanted-Height', "=" . $this->wanted_height );
-//        $this->addHeader( 'X-SS-stuffpixrat', "=" . $_GET[ 'stuffpixrat' ] );
-//        $this->addHeader( 'X-SS-source_height', "=" . $this->source_height );
+        $this->addHeader( 'X-SS-p-stuffpixrat', "=" . $_GET[ 'stuffpixrat' ] );
+        $this->addHeader( 'X-SS-p-swifty', "=" . $_GET[ 'swifty' ] );
+        $this->addHeader( 'X-SS-p-ssrx', "=" . $_GET[ 'ssrx' ] );
+        $this->addHeader( 'X-SS-ori_width', "=" . $this->ori_width );
+        $this->addHeader( 'X-SS-ori_height', "=" . $this->ori_height );
+        $this->addHeader( 'X-SS-source_width', "=" . $this->source_width );
+        $this->addHeader( 'X-SS-source_height', "=" . $this->source_height );
     }
 
     ////////////////////////////////////////
@@ -219,43 +191,73 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $wantedWidth = $this->wanted_width;
         $wantedHeight = $this->wanted_height;
 
-        $targetWidth = intval( $wantedWidth );
-        $targetHeight = intval( $wantedHeight );
+        $this->target_width = intval( $wantedWidth );
+        $this->target_height = intval( $wantedHeight );
 
         list( $ori_width, $ori_height, $type ) = getimagesize( $this->source_file );
 
         $this->ori_width = $ori_width;
         $this->ori_height = $ori_height;
+        $this->source_width = $ori_width;
+        $this->source_height = $ori_height;
         $this->tech_type = $type;
         $this->ori_type = image_type_to_extension( $this->tech_type, FALSE );
 
-        if( $targetWidth === -2 ) {
-            $targetWidth = $this->ori_width;
+        $this->ori_ratio = $this->ori_width / $this->ori_height;
+
+        $this->focus_center_x = $this->ori_width * ( $this->focus_perc_x + $this->focus_perc_w / 2 ) / 100.0;
+        $this->focus_center_y = $this->ori_height * ( $this->focus_perc_y + $this->focus_perc_h / 2 ) / 100.0;
+
+        # If no target_width requested, set it to ori_width
+        if( $this->target_width === -2 ) {
+            $this->target_width = $this->ori_width;
         }
 
-        if( $wantedHeight === -2 ) {
-//            $wantedHeight = $this->ori_height;
-            $wantedHeight = round( $targetWidth * $this->ori_height / $this->ori_width );
+        # If no target_height requested, set it to ori_width * ratio
+        if( $this->target_height === -2 ) {
+            $this->target_height = round( $this->target_width / $this->ori_ratio );
         }
 
-//        $targetHeight = round( $targetWidth * $this->ori_height / $this->ori_width );
-        $targetHeight = $wantedHeight;
+        $this->target_ratio = $this->target_width / $this->target_height;
 
+        # Determine the source_height based on target_height etc
+        $this->source_height = round( $this->target_height * $this->ori_width / $this->target_width );
+
+        # If this source_height is higher than ori_height, we need full height and reduced width
+        if( $this->source_height > $this->ori_height ) {
+            $this->source_width = round( $this->target_width * $this->ori_height / $this->target_height );
+            $this->source_height = $this->ori_height;
+        }
+
+        # If we need a forced size (ratio distortion), just used the wanted and original sizes
         if( $this->forced_size === 1 ) {
-            $targetWidth = intval( $wantedWidth );
-            $targetHeight = intval( $wantedHeight );
+            $this->target_width = intval( $wantedWidth );
+            $this->target_height = intval( $wantedHeight );
+            $this->source_width = $ori_width;
+            $this->source_height = $ori_height;
         }
 
-        $this->target_width = $targetWidth;
-        $this->target_height = $targetHeight;
+        # Center around focus rect center
+        if( $this->source_width < $this->ori_width ) {
+            $this->source_x = $this->focus_center_x - $this->source_width;
+            if( $this->source_x + $this->source_width > $this->ori_width ) {
+                $this->source_x = $this->ori_width - $this->source_width;
+            }
+            if( $this->source_x < 0 ) {
+                $this->source_x = 0;
+            }
+        }
+        if( $this->source_height < $this->ori_height ) {
+            $this->source_y = $this->focus_center_y - $this->source_height;
+            if( $this->source_y + $this->source_height > $this->ori_height ) {
+                $this->source_y = $this->ori_height - $this->source_height;
+            }
+            if( $this->source_y < 0 ) {
+                $this->source_y = 0;
+            }
+        }
 
-//        $this->source_height = $this->height_target_to_source( $targetHeight );
-    }
-
-    ////////////////////////////////////////
-
-    protected function height_target_to_source( $v ) {
-        return $v / $this->target_height * $this->ori_height;
+        $this->target_ratio = $this->target_width / $this->target_height;
     }
 
     ////////////////////////////////////////
@@ -267,13 +269,13 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
         switch( $this->tech_type ) {
             case IMAGETYPE_PNG:
-                $saved = $this->downscalePng( $source, $this->ori_width, $this->ori_height, $target, $this->target_width, $this->target_height );
+                $saved = $this->downscalePng( $source, $target );
                 break;
             case IMAGETYPE_JPEG:
-                $saved = $this->downscaleJpeg( $source, $this->ori_width, $this->ori_height, $target, $this->target_width, $this->target_height, 'resize' );
+                $saved = $this->downscaleJpeg( $source, $target, 'resize' );
                 break;
             case IMAGETYPE_GIF:
-                $saved = $this->downscaleGif( $source, $this->ori_width, $this->ori_height, $target, $this->target_width, $this->target_height );
+                $saved = $this->downscaleGif( $source, $target );
                 break;
         }
 
@@ -295,7 +297,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
             $this->return_image = $source/*$target*/;
         } else {
             if( $this->tech_type === IMAGETYPE_JPEG ) {
-                $saved = $this->downscaleJpeg( $source, $this->ori_width, $this->ori_height, $target, $this->ori_width, $this->ori_height, 'optimize' );
+                $saved = $this->downscaleJpeg( $source, $target, 'optimize' );
 
                 if ($saved && @file_exists($target)) {
                     $this->return_image = $target;
@@ -310,7 +312,18 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
     ////////////////////////////////////////
 
-    protected function downscaleJpeg( $source, $width, $height, $target, $targetWidth, $targetHeight, $mod ) {
+    protected function copy_source_area_to_dest( $targetImage, $sourceImage ) {
+        imagecopyresampled( $targetImage, $sourceImage, 0, 0, $this->source_x, $this->source_y, $this->target_width, $this->target_height, $this->source_width, $this->source_height );
+    }
+
+    ////////////////////////////////////////
+
+    protected function downscaleJpeg( $source, $target, $mod ) {
+        $width = $this->source_width;
+        $height = $this->source_height;
+        $targetWidth = $this->target_width;
+        $targetHeight = $this->target_height;
+
         $saved = TRUE;
 
         $sourceImage = @imagecreatefromjpeg($source);
@@ -319,7 +332,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         // Enable interlacing for progressive JPEGs
         imageinterlace($targetImage, true);
 
-        imagecopyresampled($targetImage, $sourceImage, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
+        $this->copy_source_area_to_dest( $targetImage, $sourceImage );
         $this->sharpenImage( $targetImage, $width, $targetWidth );
 
         if( $this->target_type === 'webp' ) {
@@ -348,7 +361,6 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
                 $target1 = $source;
             }
 
-            // dorh error check
             $this->jpegTranIfSmaller( $target1, $target );
         }
 
@@ -425,7 +437,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $sourceImage = @imagecreatefromjpeg($source);
         $targetImage = imagecreatetruecolor($targetWidth, $targetHeight);
 
-        imagecopyresampled($targetImage, $sourceImage, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
+        $this->copy_source_area_to_dest( $targetImage, $sourceImage );
         $this->sharpenImage( $targetImage, $width, $targetWidth );
 
         $this->deleteFile( $target . '.png' );
@@ -483,7 +495,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $sourceImage = @imagecreatefromjpeg($source);
         $targetImage = imagecreatetruecolor($targetWidth, $targetHeight);
 
-        imagecopyresampled($targetImage, $sourceImage, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
+        $this->copy_source_area_to_dest( $targetImage, $sourceImage );
         $this->sharpenImage( $targetImage, $width, $targetWidth );
 
         if( $test_reference === 1 ) {
@@ -735,7 +747,12 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
     ////////////////////////////////////////
 
-    protected function downscalePng($source, $width, $height, $target, $targetWidth, $targetHeight) {
+    protected function downscalePng( $source, $target ) {
+        $width = $this->source_width;
+        $height = $this->source_height;
+        $targetWidth = $this->target_width;
+        $targetHeight = $this->target_height;
+
         $img_png_quantizer = 'internal';
         $img_png_quantizer_speed = 5;
 
@@ -798,19 +815,8 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
             }
         }
 
-    // 		trigger_error(var_export(array(
-    // 			'type'						=> $sourceType,
-    // 			'indexed'					=> $sourceIndexed,
-    // 			'indextransp'				=> $sourceIndexTransparency,
-    // 			'alpha'						=> $sourceAlpha,
-    // 			'transindex'				=> $sourceTransparentIndex,
-    // 			'colors'					=> $sourceColors,
-    // 			'quantize'					=> $quantize,
-    // 			'quantizer'					=> $quantizer
-    // 		), true));
-
         // Resize & resample the image
-        imagecopyresampled($targetImage, $sourceImage, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
+        $this->copy_source_area_to_dest( $targetImage, $sourceImage );
 
         // Sharpen image if possible and requested
         if ( !$quantize ) {
@@ -839,7 +845,12 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
     ////////////////////////////////////////
 
-    protected function downscaleGif($source, $width, $height, $target, $targetWidth, $targetHeight) {
+    protected function downscaleGif( $source, $target ) {
+        $width = $this->source_width;
+        $height = $this->source_height;
+        $targetWidth = $this->target_width;
+        $targetHeight = $this->target_height;
+
    		$sourceImage					= @imagecreatefromgif($source);
    		$targetImage	        		= imagecreatetruecolor($targetWidth, $targetHeight);
 
@@ -855,7 +866,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
    		}
 
    		// Resize & resample the image (no sharpening)
-   		imagecopyresampled($targetImage, $sourceImage, 0, 0, 0, 0, $targetWidth, $targetHeight, $width, $height);
+        $this->copy_source_area_to_dest( $targetImage, $sourceImage );
 
    		// Save the target GIF image
    		$saved							= imagegif($targetImage, $target);

@@ -1,0 +1,50 @@
+// Based on http://squeezr.it
+// Based on http://adaptive-images.com
+
+// Inspirations:
+// Detect tablet in htaccess: http://mobiforge.com/design-development/tablet-and-mobile-device-detection-php
+// Get the screen width (orientation based): http://menacingcloud.com/?c=orientationScreenWidth
+// Set the viewport: http://webdesign.tutsplus.com/articles/quick-tip-dont-forget-the-viewport-meta-tag--webdesign-5972
+// Look ahead parser and picture/srcset consequences: http://blog.cloudfour.com/the-real-conflict-behind-picture-and-srcset/
+// Dssim: https://github.com/pornel/dssim
+// Find optimal jpeg quality: https://github.com/danielgtaylor/jpeg-archive
+// Perceived performance is more important that actual speed
+// Caching: http://www.mobify.com/blog/beginners-guide-to-http-cache-headers/
+// Vary header: http://www.fastly.com/blog/best-practices-for-using-the-vary-header/
+
+// Needs jpegtran: # apt-get install libjpeg-turbo-progs
+// Needs cwebp: # apt-get install webp
+// Needs jpeg-archive (for jpeg-recompress): https://github.com/danielgtaylor/jpeg-archive
+// Needs dssim (only for tests): https://github.com/pornel/dssim
+
+// dorh Make cache clear (and inspect?) functionality
+// dorh Prevent WP from generating multiple size img on upload? (like: add_image_size( 'product-img', 700, 450, false ); )
+// dorh vary header
+// dorh lazy loading
+
+// dorh make 2 docs:
+//als t af is ga ik 2 docs maken:
+//1. technische uitleg van keuzes en uiteindelijk gebruikte technieken
+//2. voor- en nadelen voor de klant en gevolgen van de gebruikte technieken
+//we zijn nu 100/100 Google pagespeed insights
+//snel op mobile (tenzij retina)
+//goede to zeer goede kwaliteit in overgrote deel van de situaties
+//en retina
+// Use this as inspiration for docs: http://blog.cloudfour.com/8-guidelines-and-1-rule-for-responsive-images/
+// progressive, webp, optimized, responsive, mobile, auto sized, cached, cdn vary header
+
+//Google Images thumbnails:  74-76
+//Facebook full-size images: 85
+//Yahoo frontpage JPEGs:     69-91
+//Youtube frontpage JPEGs:   70-82
+//Wikipedia images:          80
+//Windows live background:   82
+//Twitter user JPEG images:  30-100, apparently not enforcing quality
+
+////////////////////////////////////////
+
+//$source_file = str_replace( '320x200', '1920x200', $source_file );
+//$source_file = str_replace( '1920x200', '320x200', $source_file );
+//$source_file = str_replace( '940x200', '320x200', $source_file );
+//$source_file = str_replace( '550x200', '320x200', $source_file );
+
