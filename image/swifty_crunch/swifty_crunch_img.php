@@ -239,7 +239,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
         # Center around focus rect center
         if( $this->source_width < $this->ori_width ) {
-            $this->source_x = $this->focus_center_x - $this->source_width;
+            $this->source_x = round( $this->focus_center_x - $this->source_width / 2 );
             if( $this->source_x + $this->source_width > $this->ori_width ) {
                 $this->source_x = $this->ori_width - $this->source_width;
             }
@@ -248,7 +248,7 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
             }
         }
         if( $this->source_height < $this->ori_height ) {
-            $this->source_y = $this->focus_center_y - $this->source_height;
+            $this->source_y = round( $this->focus_center_y - $this->source_height / 2 );
             if( $this->source_y + $this->source_height > $this->ori_height ) {
                 $this->source_y = $this->ori_height - $this->source_height;
             }
@@ -318,6 +318,40 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
     ////////////////////////////////////////
 
+    protected function after_source_init( $sourceImage ) {
+        if( $this->debug ) {
+            $color_red = imagecolorallocate( $sourceImage, 255, 0, 0 );
+            $color_blue = imagecolorallocate( $sourceImage, 0, 0, 255 );
+            imagesetthickness( $sourceImage, $this->ori_width / 200 );
+            $this->addHeader( 'X-SS-Rect-x1', '=' . $this->focus_perc_x * $this->ori_width / 100.0 );
+            $this->addHeader( 'X-SS-Rect-y1', '=' . $this->focus_perc_y * $this->ori_height / 100.0 );
+            $this->addHeader( 'X-SS-Rect-x2', '=' . ( $this->focus_perc_x + $this->focus_perc_w ) * $this->ori_width / 100.0 );
+            $this->addHeader( 'X-SS-Rect-y2', '=' . ( $this->focus_perc_y + $this->focus_perc_h ) * $this->ori_height / 100.0 );
+            $this->addHeader( 'X-SS-Rect-x3', '=' . $this->focus_center_x );
+            $this->addHeader( 'X-SS-Rect-y3', '=' . $this->focus_center_y );
+            imagerectangle( $sourceImage,
+                $this->focus_perc_x * $this->ori_width / 100.0,
+                $this->focus_perc_y * $this->ori_height / 100.0,
+                ( $this->focus_perc_x + $this->focus_perc_w ) * $this->ori_width / 100.0,
+                ( $this->focus_perc_y + $this->focus_perc_h ) * $this->ori_height / 100.0,
+                $color_red );
+            imagerectangle( $sourceImage,
+                $this->focus_center_x - 10,
+                $this->focus_center_y - 10,
+                $this->focus_center_x + 10,
+                $this->focus_center_y + 10,
+                $color_blue );
+            imagerectangle( $sourceImage,
+                100,
+                100,
+                $this->ori_width - 100,
+                $this->ori_height - 100,
+                $color_blue );
+        }
+    }
+
+    ////////////////////////////////////////
+
     protected function downscaleJpeg( $source, $target, $mod ) {
         $width = $this->source_width;
         $height = $this->source_height;
@@ -328,6 +362,8 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
 
         $sourceImage = @imagecreatefromjpeg($source);
         $targetImage = imagecreatetruecolor($targetWidth, $targetHeight);
+
+        $this->after_source_init( $sourceImage );
 
         // Enable interlacing for progressive JPEGs
         imageinterlace($targetImage, true);
