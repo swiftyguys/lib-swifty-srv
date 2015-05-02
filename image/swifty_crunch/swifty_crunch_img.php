@@ -43,6 +43,9 @@ class SwiftyCrunchImg extends SwiftyCrunch {
     private $focus_center_x = -1;
     private $focus_center_y = -1;
 
+    private $ssc1 = null;
+    private $ssc2 = null;
+
     protected static $_quantizers = array(
         self::QUANTIZER_INTERNAL => false,
         self::QUANTIZER_PNGQUANT => '`which pngquant` --force --transbug --ext ".png" --speed %s %s',
@@ -145,6 +148,15 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $this->focus_perc_y = $_GET[ 'ssry' ];
         $this->focus_perc_w = $_GET[ 'ssrw' ];
         $this->focus_perc_h = $_GET[ 'ssrh' ];
+
+        $cmp = '_ssc1_';
+        if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
+            $this->ssc1 = explode( '_', substr( $url, $i + strlen( $cmp ) ) )[ 0 ];
+        }
+        $cmp = '_ssc2_';
+        if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
+            $this->ssc2 = explode( '_', substr( $url, $i + strlen( $cmp ) ) )[ 0 ];
+        }
     }
 
     ////////////////////////////////////////
@@ -159,6 +171,8 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $this->addHeader( 'X-SS-ori_height', "=" . $this->ori_height );
         $this->addHeader( 'X-SS-source_width', "=" . $this->source_width );
         $this->addHeader( 'X-SS-source_height', "=" . $this->source_height );
+        $this->addHeader( 'X-SS-c1', "=" . $this->ssc1 );
+        $this->addHeader( 'X-SS-c2', "=" . $this->ssc2 );
     }
 
     ////////////////////////////////////////
@@ -292,7 +306,20 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $source = $this->source_file;
         $target = $this->cache_file;
 
-        if( ! @symlink( $source, $target ) && ! @copy( $source, $target ) ) {
+        if( $this->ssc1 ) {
+            if( $this->tech_type === IMAGETYPE_PNG ) {
+                $saved = $this->colorPng( $source, $target );
+
+                if ($saved && @file_exists($target)) {
+                    $this->return_image = $target;
+                } else {
+                    $this->errors[] = 'colorization failed';
+                }
+            } else {
+                $this->return_image = $target;
+            }
+        }
+        else if( ! @symlink( $source, $target ) && ! @copy( $source, $target ) ) {
             $this->errors[] = 'copy original to cache failed';
             $this->return_image = $source/*$target*/;
         } else {
@@ -875,6 +902,48 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
             $cmd = sprintf(self::$_quantizers[$quantizer], max(1, min(10, intval($img_png_quantizer_speed))), escapeshellarg($target));
             @exec($cmd);
         }
+
+        return $saved;
+    }
+
+    ////////////////////////////////////////
+
+    protected function colorPng( $source, $target ) {
+        $targetWidth = $this->target_width;
+        $targetHeight = $this->target_height;
+
+        $targetImage = imagecreatetruecolor($targetWidth, $targetHeight);
+        $sourceImage = @imagecreatefrompng($source);
+
+        imagefill( $targetImage, 0, 0, imagecolorallocate( $targetImage, 255, 255, 255 ) );
+
+        $this->copy_source_area_to_dest( $targetImage, $sourceImage );
+
+        list( $r, $g, $b ) = sscanf( $this->ssc1, "%02x%02x%02x" );
+        $r /= 255;
+        $g /= 255;
+        $b /= 255;
+        list( $r2, $g2, $b2 ) = sscanf( $this->ssc2, "%02x%02x%02x" );
+        $r2 /= 255;
+        $g2 /= 255;
+        $b2 /= 255;
+
+        for( $x = 0; $x < $this->source_width; $x++ ) {
+            for( $y = 0; $y < $this->source_height; $y++ ) {
+                $src_pix = imagecolorat( $targetImage, $x, $y );
+                $pb = $src_pix & 0xFF;
+                $pb255 = 255 - $pb;
+                $pr = $pb * $r + $pb255 * $r2;
+                $pg = $pb * $g + $pb255 * $g2;
+                $pb = $pb * $b + $pb255 * $b2;
+                imagesetpixel( $targetImage, $x, $y, imagecolorallocate( $targetImage, $pr, $pg, $pb ) );
+            }
+        }
+
+        $saved = imagepng($targetImage, $target);
+
+        imagedestroy($sourceImage);
+        imagedestroy($targetImage);
 
         return $saved;
     }
