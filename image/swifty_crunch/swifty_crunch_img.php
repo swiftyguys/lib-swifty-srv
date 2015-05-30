@@ -75,8 +75,10 @@ class SwiftyCrunchImg extends SwiftyCrunch {
             $this->addErrorHeader( 'cache dir error' );
         } else {
             $this->crunch();
-            foreach( $this->errors as $errMsg ) {
-                $this->addErrorHeader( $errMsg );
+            if( $this->errors ) {
+                foreach( $this->errors as $errMsg ) {
+                    $this->addErrorHeader( $errMsg );
+                }
             }
         }
 
