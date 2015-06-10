@@ -146,10 +146,18 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $this->wanted_width = $wantedWidth;
         $this->wanted_height = $wantedHeight;
 
-        $this->focus_perc_x = $_GET[ 'ssrx' ];
-        $this->focus_perc_y = $_GET[ 'ssry' ];
-        $this->focus_perc_w = $_GET[ 'ssrw' ];
-        $this->focus_perc_h = $_GET[ 'ssrh' ];
+        if( isset( $_GET[ 'ssrx' ] ) && ! empty( $_GET[ 'ssrx' ] ) ) {
+            $this->focus_perc_x = $_GET[ 'ssrx' ];
+        }
+        if( isset( $_GET[ 'ssry' ] ) && ! empty( $_GET[ 'ssry' ] ) ) {
+            $this->focus_perc_y = $_GET[ 'ssry' ];
+        }
+        if( isset( $_GET[ 'ssrw' ] ) && ! empty( $_GET[ 'ssrw' ] ) ) {
+            $this->focus_perc_w = $_GET[ 'ssrw' ];
+        }
+        if( isset( $_GET[ 'ssrh' ] ) && ! empty( $_GET[ 'ssrh' ] ) ) {
+            $this->focus_perc_h = $_GET[ 'ssrh' ];
+        }
 
         $cmp = '_ssc1_';
         if( ( $i = strpos( $url, $cmp ) ) !== false ) { // false compare is deliberate
