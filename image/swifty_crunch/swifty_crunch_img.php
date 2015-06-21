@@ -232,12 +232,16 @@ $this->final_url = $_SERVER['MY_CRUNCH_URL'];
         $this->focus_center_x = $this->ori_width * ( $this->focus_perc_x + $this->focus_perc_w / 2 ) / 100.0;
         $this->focus_center_y = $this->ori_height * ( $this->focus_perc_y + $this->focus_perc_h / 2 ) / 100.0;
 
-        # If no target_width requested, set it to ori_width
+        # If no target_width requested, set it to ori_width or ori_height * ratio
         if( $this->target_width === -2 ) {
-            $this->target_width = $this->ori_width;
+            if( $this->target_height === -2 ) {
+                $this->target_width = $this->ori_width;
+            } else {
+                $this->target_width = round( $this->target_height * $this->ori_ratio );
+            }
         }
 
-        # If no target_height requested, set it to ori_width * ratio
+        # If no target_height requested, set it to ori_width / ratio
         if( $this->target_height === -2 ) {
             $this->target_height = round( $this->target_width / $this->ori_ratio );
         }
